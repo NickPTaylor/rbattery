@@ -1,0 +1,371 @@
+---
+title: "Optimising Arbitrage with FFR Market Participation"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Optimising Arbitrage with FFR Market Participation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 6,
+  fig.asp = 0.618,
+  out.width = "70%",
+  fig.align = "centre"
+)
+
+library(rbattery)
+library(dplyr)
+library(lubridate)
+library(purrr)
+library(ggplot2)
+library(tidyr)
+```
+
+## Introduction
+
+#### Scenario
+
+It can be desirable to participate in a [balancing service market](https://www.nationalgrideso.com/balancing-services/list-all-balancing-services) whilst also using arbitrage to supplement income.  Participation in a balancing service market requires the participant to be available to charge/discharge *exclusively* within that market during contracted periods.  Hence, arbitrage will be unavailable at these times.  Furthermore, there will be a requirement to be available to charge/discharge a specified *minimum* amount of energy during the contracted periods and this will require the battery capacity to be within a specified state of charge range at the commencement of the period.  Providing these constraints are adhered to, arbitrage can be operated during periods outside of the balancing service contract periods.  In this document, a demonstration of how this scenario can be modelled with the `rbattery` package is presented.
+ 
+#### Battery Specification
+
+Assume that the battery specification is as follows:
+
+* Capacity, MWh
+* C-rate,  1/h
+* Round-trip efficiency, %
+
+Degradation will not be considered in this example.
+
+```{r battery_params}
+# Setup battery parameters.
+capacity <- 10
+c_rate <- 1
+rt_efficiency <- .8
+```
+
+#### Spot Prices
+
+The `rbattery` package ships with example spot price data i.e. `spot_price_2016`.  For simplicity, in this demonstration, EPEX spot price data for 01/07/2016 will be used:
+
+```{r spot_price}
+analysis_day <- lubridate::ymd("2016-07-01")
+
+# Filter data.
+df_spot_price_20160701 <- rbattery::spot_price_2016 %>%
+    dplyr::select(timestamp, price_epex = EPEX) %>%
+    dplyr::filter(as.Date(timestamp) == analysis_day)
+
+df_spot_price_20160701 %>% head()
+```
+
+#### FFR Service
+
+It will be assumed that the contract to supply FFR services stipulates the following:
+
+* The contract periods are 0700-1000 and from 1500-1900
+* Arbitrage is not permitted during the contract period.
+* State of charge (SoS) must be between 40% and 90% at the beginning of the contract window in order to facilitate the minimum available charge/discharge requirement.
+
+```{r, contract_requirements}
+# Setup contract requirement data.
+init_max_sos <- .9
+init_min_sos <- .4
+
+df_contract_req <- tribble(
+    ~start,        ~end,          
+    #----------#   #----------#   
+    "07:00",       "10:00",
+    "15:00",       "19:00"
+)
+
+df_contract_req <- df_contract_req %>% 
+    dplyr::mutate_all(~lubridate::ymd_hm(glue::glue("{analysis_day} {.}"))) %>%
+    dplyr::mutate(max_charge = capacity * 0.9,
+                  min_charge = capacity * 0.4)
+
+df_contract_req
+```
+
+## Method
+
+The `rbattery::optimise_arbitrage()` is the "workhorse" of the package.  The first argument must be a `data.frame` with the following data for each settlement period i.e. each row:
+
+* Spot price
+* Exclude flags i.e. 1 or 0, depending on whether arbitrage is permitted.
+* Maximum charge
+* Minimum charge
+
+In order to run the optimisation, it is necessary to bind the spot price data to the data listed above.
+
+#### Exclude Flag
+
+The exclude flag should be 1 during the FFR service contract windows and 0 otherwise.  These are calculated and appended as follows:
+
+```{r exclude}
+# Initialise input dataframe with spot price data.
+df_optim_20160701 <- df_spot_price_20160701
+
+is_excluded <- function(start, end, x) dplyr::between(x, start, end)
+
+# Set exclude flags.
+exclude <- df_contract_req %>%
+    select(start, end) %>%
+    # Iterate each contract window.
+    pmap(is_excluded, x = df_optim_20160701[['timestamp']]) %>% 
+    # Reduce using an OR operation.
+    reduce(`|`) %>% 
+    as.integer()
+
+df_optim_20160701 <- df_optim_20160701 %>% 
+    dplyr::bind_cols(exclude = exclude)
+```
+
+#### Maximum and Minimum Charge
+
+The maximum/minimum charge can simply be joined to the data as follows.  For timestamps that do not coincide with `df_contract_req$start`, the `min_charge` and `max_charge` will be set to `NA` i.e. no data.  This turns out to be convenient since `NA` is interpreted as the default min or max charge by `rbattery::optimise_arbitrage` i.e. 0 and the battery capacity respectively.  Hence, after the join, the `data.frame` is in form required for optimisation.
+
+Note that the join works if the window start time is coincident with a settlement period, however, further manipulation would be required if this were not the case i.e. it would be required to 'roll forward' the min/max charge data to the next settlement period start time.
+
+```{r max_min_charge}
+# Set max/min charge.
+df_optim_20160701 <- df_optim_20160701 %>%
+    dplyr::full_join(
+        df_contract_req %>% dplyr::select(-end),
+        by = c('timestamp' = 'start'))
+
+# Show example.
+from_time <- lubridate::ymd_hm(glue::glue('{analysis_day} 06:00'))
+df_optim_20160701 %>%
+    dplyr::filter(timestamp >= from_time) 
+```
+
+#### Optimise
+
+Now, the `data.frame` is in the required form and the optimisation algorithm can be applied:
+
+```{r optimise}
+# Optimise.
+df_optim_20160701 <- df_optim_20160701 %>%
+    rbattery::optimise_arbitrage(price_from = 'price_epex',
+                              exclude_from = 'exclude',
+                              max_charge_from = 'max_charge',
+                              min_charge_from = 'min_charge',
+                              capacity = capacity,
+                              c_rate = c_rate,
+                              efficiency = sqrt(rt_efficiency))
+
+df_optim_20160701 %>% head()
+```
+
+## Results
+
+R has powerful graph plotting packages for presenting results.  Three plots are presented below to showcase the capability of the `ggplot` package.
+
+#### Operation
+
+This plot shows the battery operation with time.  As expected, the battery charges when the spot price is low and discharges when the spot price is high.  The height of the bar corresponds to the fraction of the period for which the battery charges or discharges.
+
+```{r plt_operation, out.width="100%", fig.width=8.571, echo=FALSE}
+# Prepare data for plot.
+df_plt <- df_optim_20160701 %>%
+    mutate(idle = 1 - charge - discharge) %>%
+    pivot_longer(c(discharge, charge, idle), names_to = 'op_mode',
+               values_to = 't_prop') %>%
+    mutate(op_mode = if_else(exclude == 1, 'ffr', op_mode))
+
+# Calculate operation mode overlay tiles on plot.
+range_epex <- range(df_plt$price_epex) * c(0.95, 1.05)
+df_plt <- df_plt %>%
+  group_by(timestamp) %>% 
+  mutate(height = t_prop * (diff(range_epex)),
+         y = min(range_epex) + (cumsum(height)) - height/2) %>% 
+  ungroup()
+
+# Plot operation mode.
+plt_subtitle <- glue::glue("
+    Date {strftime(analysis_day, '%D')}, \\
+    Capacity {capacity} MW, \\
+    c-Rate {c_rate} 1/h, \\
+    RT Efficiency {rt_efficiency}%")
+
+ggplot(df_plt, aes(x = timestamp)) +
+  geom_tile(aes(y = y, height = height, fill = op_mode), alpha = .4) +
+  geom_line(aes(x = timestamp, y = price_epex), inherit.aes = FALSE) +
+  geom_point(aes(x = timestamp, y = price_epex), alpha = .5) +
+  scale_x_datetime(date_labels = '%H:%M') +
+  scale_fill_manual(
+    values = c(discharge = 'green', idle = 'grey20', charge = 'red',
+               ffr = 'blue'),
+    labels = c(discharge = 'Discharge', idle = 'Idle',
+               charge = 'Charge', ffr = "FFR")) +
+  labs(x = "Time",
+       y = "Spot Price (£/MWh)",
+       title = "Battery Operation",
+       subtitle = plt_subtitle,
+       fill = '') +
+  theme_linedraw() +
+  theme(legend.position = 'bottom',
+      legend.justification = c(0, 0), 
+      legend.direction = 'horizontal',
+      plot.subtitle = element_text(size = 8))
+```
+
+#### Battery State of Charge
+
+The next plot shows how the state of charge with time.  The FFR windows are shaded in blue.  The battery is idle during the FFR contract window, since arbitrage is not permitted; its charge is within the permissive range at the start of each window.  In reality, the battery may *not* be idle during the FFR window since it may be utilised under the FFR contract.  However, in this example, it is assumed that there is no utilisation.
+
+```{r plt_sos, out.width="100%", fig.width=8.571, echo=FALSE}
+# Prepare data for plot.
+df_plt <- df_optim_20160701 %>%
+    mutate(op_mode = if_else(exclude == 1, 'ffr', 'arb')) %>% 
+    mutate(xmax = lead(timestamp, default = max(timestamp) + minutes(30)),
+           ymin_price = range_epex[[1]],
+           ymax_price = range_epex[[2]],
+           ymax_charge_state = capacity * 1.05,
+           ymin_charge_state = 0)
+
+# Plot spot price.
+plt_spot_price <-
+  ggplot(df_plt, aes(x = timestamp, y = price_epex)) +
+  geom_rect(aes(xmin = timestamp, xmax = xmax,
+                ymin = ymin_price, ymax = ymax_price,
+                fill = op_mode), alpha = .4) +
+  geom_line(aes(y = price_epex)) +
+  geom_point(aes(y = price_epex)) +
+  scale_x_datetime(
+    labels = scales::label_date(format = "%H:%M"),
+    position = 'top') +
+  scale_fill_manual(
+    values = c("arb" = NA, "ffr" = "blue"),
+    guide = FALSE) +
+  labs(y = "Spot Price\n(£/MWh)",
+       x = "",
+       title = NULL) +
+  theme_linedraw() +
+  theme(plot.subtitle = element_text(size = 8))
+
+# Plot state of charge.
+plt_charge <- 
+  ggplot(df_plt, aes(x = timestamp)) +
+  scale_x_datetime(labels = scales::label_date(format = "%H:%M")) +
+  geom_rect(aes(xmin = timestamp, xmax = xmax,
+                ymin = ymin_charge_state, ymax = ymax_charge_state,
+                fill = op_mode), alpha = .4) +
+  scale_fill_manual(values = c("arb" = NA, "ffr" = "blue"),
+                    guide = FALSE) +
+  geom_hline(yintercept = capacity, colour = 'blue', linetype = 'dashed') +
+  annotate("text", x = as_datetime(analysis_day), y = capacity * 1.02,
+           hjust = 0, vjust = 0, colour = 'blue', label = "CAPACITY",
+           size = 3) +
+  geom_hline(yintercept = init_min_sos * capacity, colour = 'red',
+             linetype = 'dashed') +
+  annotate("text", x = as_datetime(analysis_day),
+           y = init_min_sos * capacity * 1.02,
+           hjust = 0, vjust = 0, colour = 'red',
+           label = "Min init. FFR SoC",
+           size = 3) +
+  geom_hline(yintercept = init_max_sos * capacity, colour = 'red',
+             linetype = 'dashed') +
+  annotate("text", x = as_datetime(analysis_day),
+           y = init_max_sos * capacity * .98,
+           hjust = 0, vjust = 1, colour = 'red',
+           label = "Max init. FFR SoC",
+           size = 3) +
+  geom_line(aes(y = charge_state), size = 1.1) +
+  scale_y_continuous(
+    limits = c(NA, capacity * 1.1),
+    breaks = scales::breaks_pretty(n = 6),
+    sec.axis = sec_axis(trans = ~./capacity,
+                        labels = scales::label_percent(),
+                        breaks = scales::breaks_pretty(n = 6),
+                        name = "State of Charge (%)")) +
+  labs(x = "Time",
+       y = "Absolute Charge\n(MWh)",
+       title = NULL) +
+  theme_linedraw() +
+  theme(plot.subtitle = element_text(size = 8),
+        axis.text.y.right = element_text(margin = margin(r = 5)))
+
+# Plot title.
+title <- cowplot::ggdraw() + 
+  cowplot::draw_label("Battery charge", x = 0, hjust = 0) +
+  theme(plot.margin = margin(0, 0, 0, 33))
+
+# Plot subtitle.
+subtitle <- cowplot::ggdraw() + 
+  cowplot::draw_label(plt_subtitle, x = 0, size = 8, hjust = 0) +
+  theme(plot.margin = margin(0, 0, 0, 33))
+
+# Arrange plots and title.
+plt_row <- cowplot::plot_grid(plt_spot_price, plt_charge, ncol = 1,
+                              align = 'v', rel_heights = c(.3, .7))
+cowplot::plot_grid(title, subtitle, plt_row, ncol = 1,
+                   rel_heights = c(0.05, 0.05, 1))
+```
+
+#### Income from Arbitrage
+
+The next plot shows cumulative income from arbitrage.  The maximum cumulative income should occur at the last period(s).
+
+```{r plt_income, out.width="100%", fig.width=8.571, echo=FALSE}
+# Prepare data for plot.
+final_time <- df_optim_20160701 %>% 
+    slice(n()) %>% 
+    pull(timestamp)
+
+# Note that we need to shift arb_income forward 1 since it refers to income
+# AFTER the period.
+df_plt <- df_optim_20160701 %>%
+    add_row(arb_income = 0, timestamp = final_time + minutes(30)) %>%
+    mutate(op_mode = if_else(exclude == 1, 'ffr', 'arb')) %>% 
+    mutate(cum_arb_income = cumsum(lag(arb_income, default = 0))) %>% 
+    mutate(xmax = lead(timestamp, default = final_time + minutes(30)),
+           ymax_arb_income = max(cum_arb_income) * 1.05,
+           ymin_arb_income = min(cum_arb_income) * 0.95)
+
+df_final_income <- df_plt %>% 
+    slice(n())
+
+income_lab <-
+    glue::glue("£{income}",
+               income = round(df_final_income[['cum_arb_income']]))
+           
+# Plot of income.
+plt_income <- 
+    ggplot(df_plt, aes(x = timestamp)) +
+    scale_x_datetime(labels = scales::label_date(format = "%H:%M")) +
+    geom_rect(aes(xmin = timestamp, xmax = xmax,
+                  ymin = ymin_arb_income, ymax = ymax_arb_income,
+                  fill = op_mode), alpha = .4) +
+    scale_fill_manual(values = c("arb" = NA, "ffr" = "blue"),
+                      guide = FALSE) +
+    geom_line(aes(y = cum_arb_income), size = 1.1) +
+    scale_y_continuous(labels = scales::label_dollar(prefix = "£")) +
+    geom_point(data = df_final_income,
+               aes(x = timestamp, y = cum_arb_income),
+               colour = 'red', size = 2) + 
+    geom_label(data = df_final_income, aes(x = timestamp, y = cum_arb_income),
+               label = income_lab,
+               nudge_x = -as.numeric(minutes(60))) +
+    labs(x = "Time",
+         y = "Cumulative Income (£)",
+         title = NULL) +
+    theme_linedraw() +
+    theme(plot.subtitle = element_text(size = 8),
+          axis.text.y.right = element_text(margin = margin(r = 5)))
+
+title <- cowplot::ggdraw() + 
+  cowplot::draw_label("Cumulative Income", x = 0, hjust = 0) +
+  theme(plot.margin = margin(0, 0, 0, 33))
+  
+# Arrange plots and title.
+plt_row <- cowplot::plot_grid(plt_spot_price, plt_income, ncol = 1,
+                              align = 'v', rel_heights = c(.3, .7))
+cowplot::plot_grid(title, subtitle, plt_row, ncol = 1,
+                   rel_heights = c(0.05, 0.05, 1))
+```

@@ -1,0 +1,161 @@
+---
+title: "Optimisation Algorithm"
+author: Nick Taylor
+date: "`r format(Sys.Date())`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Optimisation Algorithm}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+<style type="text/css">
+table {
+    min-width: 80%;
+}
+</style>
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Introduction
+
+The objective of the model is to:
+
+> Maximise income for a battery storage solution for the *arbitrage* market.  The algorithm can be applied to pure arbitrage and optionally, constraints can be included to represent participation in balancing service markets.
+
+The model is formulated as a *linear programme*.  The linear programme is implemented using the [`ompr`](https://cran.r-project.org/web/packages/ompr/index.html) package.
+
+## Assumptions
+
+The following assumptions and simplifications apply:
+
+* Perfect foresight of electricity spot prices.  The intent is to provide tools for forecasting spot prices in the future.
+* The battery has zero charge at the beginning of the first settlement period.
+* Round-trip efficiency is considered but other efficiencies are not.  The round trip efficiency reflects the losses due to transmission.  It is assumed that the losses incurred for charge/discharge are equally distributed and therefore, the efficiency for each will be the square root of the round trip efficiency.
+* Depth of discharge is 100% i.e. the full battery capacity is available at all times.
+
+## Model
+
+### Nomenclature
+
+The model *parameters* are as follows:
+
+| Parameter                 | Unit    | Symbol         |
+| :--------                 | :---    | :-----         |
+| Capacity                  | MWh     | $E$            |
+| Charge rate               | 1/h     | $\rho$         |
+| Degradation cost          | £/cycle | $\overline{D}$ |
+| Efficiency                | %       | $\eta$         |
+| NPV of Future Price       | £       | $F_{NPV}$      |
+| Settlement period         | h       | $t$            |
+
+Let $i$ denote the $i$th settlement period where $i=0$ is the first period of interest and $i=N$ is the last period on interest.  The *variables* for period $i$ are:
+
+| Variables                                | Type    | Unit   | Symbol      |
+| :--------                                | :---    | :---   | :-----      |
+| Spot price                               | Input   | £/MWh  | $P_i$       |
+| Degradation cost                         | Input   | £      | $\hat{D}_i$ |
+| Charge state                             | Output  | MWh    | $\hat{E}_i$ |
+| Proportion of period spent charging      | Output  | -      | ${C_i}^+$   |
+| Proportion of period spent discharging   | Output  | -      | ${C_i}^-$   |
+
+### Constraints
+
+**Operation**. The variables, ${C_i}^+$ and ${C_i}^-$, denote the the proportion of settlement period $i$ that the battery is charging or discharging respectively.  Both variables must be between 0 and 1, since they are proportions.  The sum of the two variables must be equal to or less than 1 since this also is a proportion [^operation].  When the sum is less than 1, this indicates that the battery is idle for part of the period; if the battery is idle for all of the period, the sum is 0.  The constraints are:
+
+[^operation]: In practice, the battery should not charge and discharge in the same settlement period.  The spot price is fixed in a settlement period so there is not possibility to profit from this action and in fact, a loss will be made due to battery degradation from operation.  Hence, this constraint effectively sets each of ${C_i}^+$ and ${C_i}^-$ to be less than 1 as individual variables; however, setting the constraint as a sum of the variables captures the intent of the constraint more explicitly.
+
+$$
+    0 \leq {C_i}^+ \\
+    0 \leq {C_i}^- \\
+    {C_i}^+ + {C_i}^- \leq 1
+$$
+
+**Battery Charge State**.  Let $\hat{E}_i$ denote the charge state at the *beginning* of settlement period $i$.  The charge state must always be between between fully discharged and fully charged.  Therefore:
+
+$$
+0 \leq \hat{E_i} \leq 0 \\
+$$
+
+In order ensure the continuity of charge between the end of each settlement period and the beginning of the next, the following constraint applies:
+
+$$
+\hat{E}_{i} = \hat{E}_{i-1} + \rho E t \left[ {C_{i-1}}^+ - {C_{i-1}}^- \right]
+$$
+
+The term, $\rho E t$, is the absolute amount of charge/discharge energy during a settlement period for the case when the battery charges/discharges during the entire cycle.  The initial charge is fixed at 0, therefore: 
+
+$$
+\hat{E}_0 = 0
+$$
+
+Also, noting that $\hat{E}_{i}$ refers to the charge at the *beginning* of a settlement period, it is required to constrain the charge at the *end* of the *last* settlement period i.e.:
+
+$$
+  0 \leq \hat{E}_N + \rho E t \left[ {C_N}^+ - {C_N}^- \right] \leq E
+$$
+
+**Balancing Markets**.  The model optionally facilitates participation in other markets.  This imposes further constraints on the optimisation problem.
+
+* Typically, arbitrage cannot operate when participating in another market.  Therefore, constraints may be added to stop arbitrage activity i.e. constrain the battery to be 'idle' with respect to arbitrage.
+
+* Participation in a market will require delivery of a specified amount energy at a specific time and over a specific period.  Constraints may be included in the arbitrage optimisation to ensure that sufficient charge/discharge capacity is available to facilitate this. 
+* Additional charge/discharge from participation in any other market may be input into the arbitrage optimisation to ensure account for charge/discharge activity which is *not* due to arbitrage.
+
+### Degradation
+
+Degradation can be calculated using similar principles to that of [Levelised Cost](https://corporatefinanceinstitute.com/resources/knowledge/finance/levelized-cost-of-energy-lcoe/), which can be described as:
+
+> the average total cost of building and operating the asset, per unit of total electricity generated over an assumed lifetime.
+
+The reader is referred to the link for full details.  Degradation should be accounted for when determining whether electricity generation is profitable.  Using the levelised cost approach, firstly, a *future cost* should be estimated.  For example, this could be the cost of restoring the battery to its original specification after some period, although the future cost can be estimated using various approaches.  A degradation cost per unit electricity generated is then be calculated as follows:
+
+$$
+D = \frac{F_{NPV}}{\eta^2 \rho E t} \cdot
+    \frac{1}{\sum_{i=0}^N \left({C_i}^+ + {C_i}^- \right)}
+$$
+
+Note that the *electricity generated* is based the energy discharged *at meter* after a charge/discharge cycle.  Modelling the degradation in this way is not suitable for a linear programming approach.  The future net present value $F_{NPV}$ depends on the amount of degradation which in turn will depend on the number of cycles.  This is not linear.
+
+The problem is simplified by assuming an upfront fixed degradation cost per cycle, $\overline{D}$.  Then, for each settlement period, the total *absolute* charge/discharge can be used to deduce the fraction of a full cycle operation occurring during the settlement period.  The product of the cycle fraction and the degradation cost per cycle gives a degradation cost of the settlement period i.e.
+
+$$
+\hat{D}_i = \overline{D} \left(
+    \frac{\left[ \rho E t \right] \left[ {C_i}^+ + {C_i}^- \right]}{2E}
+\right)
+$$
+Note that in the bracketed term, the numerator is the sum of absolute charge/discharge energy and the denominator is the total charge/discharge energy for a full cycle i.e. twice the battery capacity.  This simpler approach to degradation assignment facilitates the application of a linear program.
+
+### Objective
+
+The objective is to maximise profit from arbitrage.  The income from charging during one settlement period is:
+
+$$
+     - \left[ \rho E t \right] \frac{{C_i}^+} {\eta} P_i
+$$
+
+Clearly, the income is always negative when charging.  Note that due to the efficiency penalty, more energy is metered i.e. paid for than the observed change in battery capacity.  The value of $P_i$ are prices and cost *at meter*.  Hence, an adjustment is made using the efficiency, $\eta$, to account for this.
+
+The income from discharging is:
+
+$$
+     \left[ \rho E t \right] {C_i}^- \eta P_i
+$$
+
+For discharging, the efficiency penalty means that *less* energy is metered i.e. payment received for, than is actually discharged.  Combining the income from discharging, the cost for charging and the loss due to degradation, the objective function after simplification is:
+
+$$
+\max \left[  
+    \sum_{i=0}^N
+        P_i \left( \eta^2 {C_i}^- - {C_i}^+ \right) -
+        \eta \overline{D} 
+        \left(
+            \frac{\left[ {C_i}^+ + {C_i}^- \right]}{2 E}
+        \right)
+\right]
+$$

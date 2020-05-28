@@ -1,0 +1,11 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^data-raw$
+^doc$
+^Meta$
+^renv$
+^renv\.lock$
+^_pkgdown\.yml$
+^docs$
+^pkgdown$
+^\.github$

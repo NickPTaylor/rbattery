@@ -1,0 +1,3 @@
+# R Package for Battery Energy Storage Solutions
+
+`rbattery` is an R package, providing tools for the analysis of business strategies for Battery Energy Storage Solutions (BESS).  The package enables a financial study of the utilisation of BESS technologies in an arbitrage market and UK balancing mechanism markets to be performed.  It includes an optimisation algorithm for maximising financial return from an arbitrage market, definitions of the contractual rules for balancing market participation, forecasting of UK electricity spot prices and a model of the technical aspects of BESS hardware e.g. charge rates, efficiency, degradation, etc.

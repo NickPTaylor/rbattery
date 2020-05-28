@@ -1,0 +1,12 @@
+destination: docs
+template:
+  params:
+    bootswatch: flatly
+articles:
+- title: Background
+  contents:
+  - optimisation-algorithm
+- title: Usage
+  contents:
+  - pure-arbitrage
+  - optimising-arbitrage-with-ffr-market

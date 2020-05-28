@@ -1,0 +1,46 @@
+Package: rbattery
+Type: Package
+Title: Battery Energy Storage Solution Marketing Strategy
+Version: 0.0.0.9000
+Authors@R: person("Nick", "Taylor", email = "nick.patrick.taylor@gmail.com",
+  role = c("aut", "cre"))
+Maintainer: The package maintainer <yourself@somewhere.net>
+Description: Tools for the analysis of business strategies for battery energy
+    storage solutions.  The package enables a financial study of the
+    utilisation of battery technologies in an arbitrage market and UK balancing
+    mechanism markets to be performed.  It includes an optimisation
+    algorithm for maximising financial return from an arbitrage market,
+    definitions of the contractual rules for balancing market participation,
+    forecasting of UK electricity spot prices and a model of the technical
+    aspects of hardware e.g. charge rates, efficiency, degradation, etc.
+License: file LICENSE
+Encoding: UTF-8
+LazyData: true
+Suggests:
+    spelling,
+    testthat (>= 2.1.0),
+    rjson,
+    knitr,
+    rmarkdown,
+    pkgdown,
+    ggplot2,
+    lubridate,
+    scales (>= 1.1.0),
+    cowplot,
+    purrr
+Imports:
+    ompr,
+    ompr.roi,
+    dplyr,
+    tidyr,
+    magrittr,
+    ROI.plugin.symphony,
+    rlang,
+    glue,
+    utils
+Depends: R (>= 3.6.0)
+RoxygenNote: 7.1.0
+Language: en-GB
+VignetteBuilder: knitr
+URL: https://github.com/NickPTaylor/rbattery
+BugReports: https://github.com/NickPTaylor/rbattery/issues
