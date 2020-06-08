@@ -82,7 +82,7 @@ $$
 0 \leq \hat{E_i} \leq 0 \\
 $$
 
-In order ensure the continuity of charge between the end of each settlement period and the beginning of the next, the following constraint applies:
+In order to ensure the continuity of charge between the end of each settlement period and the beginning of the next, the following constraint applies:
 
 $$
 \hat{E}_{i} = \hat{E}_{i-1} + \rho E t \left[ {C_{i-1}}^+ - {C_{i-1}}^- \right]
@@ -105,7 +105,7 @@ $$
 * Typically, arbitrage cannot operate when participating in another market.  Therefore, constraints may be added to stop arbitrage activity i.e. constrain the battery to be 'idle' with respect to arbitrage.
 
 * Participation in a market will require delivery of a specified amount energy at a specific time and over a specific period.  Constraints may be included in the arbitrage optimisation to ensure that sufficient charge/discharge capacity is available to facilitate this. 
-* Additional charge/discharge from participation in any other market may be input into the arbitrage optimisation to ensure account for charge/discharge activity which is *not* due to arbitrage.
+* Additional charge/discharge from participation in any other market may be input into the arbitrage optimisation to account for charge/discharge activity which is *not* due to arbitrage.
 
 ### Degradation
 
@@ -113,14 +113,14 @@ Degradation can be calculated using similar principles to that of [Levelised Cos
 
 > the average total cost of building and operating the asset, per unit of total electricity generated over an assumed lifetime.
 
-The reader is referred to the link for full details.  Degradation should be accounted for when determining whether electricity generation is profitable.  Using the levelised cost approach, firstly, a *future cost* should be estimated.  For example, this could be the cost of restoring the battery to its original specification after some period, although the future cost can be estimated using various approaches.  A degradation cost per unit electricity generated is then be calculated as follows:
+The reader is referred to the link for full details.  Degradation should be accounted for when determining whether electricity generation is profitable.  Using the levelised cost approach, firstly, a *future cost* should be estimated.  For example, this could be the cost of restoring the battery to its original specification after some period, although the future cost can be estimated using various approaches.  A degradation cost per unit electricity generated is calculated as follows:
 
 $$
 D = \frac{F_{NPV}}{\eta^2 \rho E t} \cdot
     \frac{1}{\sum_{i=0}^N \left({C_i}^+ + {C_i}^- \right)}
 $$
 
-Note that the *electricity generated* is based the energy discharged *at meter* after a charge/discharge cycle.  Modelling the degradation in this way is not suitable for a linear programming approach.  The future net present value $F_{NPV}$ depends on the amount of degradation which in turn will depend on the number of cycles.  This is not linear.
+Note that the *electricity generated* is based on the energy discharged *at meter* after a charge/discharge cycle.  Modelling the degradation in this way is not suitable for a linear programming approach.  The future net present value $F_{NPV}$ depends on the amount of degradation which in turn will depend on the number of cycles.  This is not linear.
 
 The problem is simplified by assuming an upfront fixed degradation cost per cycle, $\overline{D}$.  Then, for each settlement period, the total *absolute* charge/discharge can be used to deduce the fraction of a full cycle operation occurring during the settlement period.  The product of the cycle fraction and the degradation cost per cycle gives a degradation cost of the settlement period i.e.
 

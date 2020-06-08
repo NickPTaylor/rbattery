@@ -76,7 +76,7 @@
       <h1 data-toc-skip>Optimisation Algorithm</h1>
                         <h4 class="author">Nick Taylor</h4>
             
-            <h4 class="date">2020-05-28</h4>
+            <h4 class="date">2020-06-08</h4>
       
       <small class="dont-index">Source: <a href="https://github.com/NickPTaylor/rbattery/blob/master/vignettes/optimisation-algorithm.Rmd"><code>vignettes/optimisation-algorithm.Rmd</code></a></small>
       <div class="hidden name"><code>optimisation-algorithm.Rmd</code></div>
@@ -211,7 +211,7 @@ table {
 <p><span class="math display">\[
 0 \leq \hat{E_i} \leq 0 \\
 \]</span></p>
-<p>In order ensure the continuity of charge between the end of each settlement period and the beginning of the next, the following constraint applies:</p>
+<p>In order to ensure the continuity of charge between the end of each settlement period and the beginning of the next, the following constraint applies:</p>
 <p><span class="math display">\[
 \hat{E}_{i} = \hat{E}_{i-1} + \rho E t \left[ {C_{i-1}}^+ - {C_{i-1}}^- \right]
 \]</span></p>
@@ -226,8 +226,8 @@ table {
 <p><strong>Balancing Markets</strong>. The model optionally facilitates participation in other markets. This imposes further constraints on the optimisation problem.</p>
 <ul>
 <li><p>Typically, arbitrage cannot operate when participating in another market. Therefore, constraints may be added to stop arbitrage activity i.e. constrain the battery to be ‘idle’ with respect to arbitrage.</p></li>
-<li>Participation in a market will require delivery of a specified amount energy at a specific time and over a specific period. Constraints may be included in the arbitrage optimisation to ensure that sufficient charge/discharge capacity is available to facilitate this.</li>
-<li><p>Additional charge/discharge from participation in any other market may be input into the arbitrage optimisation to ensure account for charge/discharge activity which is <em>not</em> due to arbitrage.</p></li>
+<li><p>Participation in a market will require delivery of a specified amount energy at a specific time and over a specific period. Constraints may be included in the arbitrage optimisation to ensure that sufficient charge/discharge capacity is available to facilitate this.</p></li>
+<li><p>Additional charge/discharge from participation in any other market may be input into the arbitrage optimisation to account for charge/discharge activity which is <em>not</em> due to arbitrage.</p></li>
 </ul>
 </div>
 <div id="degradation" class="section level3">
@@ -237,12 +237,12 @@ table {
 <blockquote>
 <p>the average total cost of building and operating the asset, per unit of total electricity generated over an assumed lifetime.</p>
 </blockquote>
-<p>The reader is referred to the link for full details. Degradation should be accounted for when determining whether electricity generation is profitable. Using the levelised cost approach, firstly, a <em>future cost</em> should be estimated. For example, this could be the cost of restoring the battery to its original specification after some period, although the future cost can be estimated using various approaches. A degradation cost per unit electricity generated is then be calculated as follows:</p>
+<p>The reader is referred to the link for full details. Degradation should be accounted for when determining whether electricity generation is profitable. Using the levelised cost approach, firstly, a <em>future cost</em> should be estimated. For example, this could be the cost of restoring the battery to its original specification after some period, although the future cost can be estimated using various approaches. A degradation cost per unit electricity generated is calculated as follows:</p>
 <p><span class="math display">\[
 D = \frac{F_{NPV}}{\eta^2 \rho E t} \cdot
     \frac{1}{\sum_{i=0}^N \left({C_i}^+ + {C_i}^- \right)}
 \]</span></p>
-<p>Note that the <em>electricity generated</em> is based the energy discharged <em>at meter</em> after a charge/discharge cycle. Modelling the degradation in this way is not suitable for a linear programming approach. The future net present value <span class="math inline">\(F_{NPV}\)</span> depends on the amount of degradation which in turn will depend on the number of cycles. This is not linear.</p>
+<p>Note that the <em>electricity generated</em> is based on the energy discharged <em>at meter</em> after a charge/discharge cycle. Modelling the degradation in this way is not suitable for a linear programming approach. The future net present value <span class="math inline">\(F_{NPV}\)</span> depends on the amount of degradation which in turn will depend on the number of cycles. This is not linear.</p>
 <p>The problem is simplified by assuming an upfront fixed degradation cost per cycle, <span class="math inline">\(\overline{D}\)</span>. Then, for each settlement period, the total <em>absolute</em> charge/discharge can be used to deduce the fraction of a full cycle operation occurring during the settlement period. The product of the cycle fraction and the degradation cost per cycle gives a degradation cost of the settlement period i.e.</p>
 <p><span class="math display">\[
 \hat{D}_i = \overline{D} \left(
@@ -278,7 +278,7 @@ D = \frac{F_{NPV}}{\eta^2 \rho E t} \cdot
 <div class="footnotes">
 <hr>
 <ol>
-<li id="fn1"><p>In practice, the battery should not charge and discharge in the same settlement period. The spot price is fixed in a settlement period so there is not possibility to profit from this action and in fact, a loss will be made due to battery degradation from operation. Hence, this constraint effectively sets each of <span class="math inline">\({C_i}^+\)</span> and <span class="math inline">\({C_i}^-\)</span> to be less than 1 as individual variables; however, setting the constraint as a sum of the variables captures the intent of the constraint more explicitly.<a href="#fnref1" class="footnote-back">↩</a></p></li>
+<li id="fn1"><p>In practice, the battery should not charge and discharge in the same settlement period. The spot price is fixed in a settlement period so there is not possibility to profit from this action and in fact, a loss will be made due to battery degradation from operation. Hence, this constraint effectively sets each of <span class="math inline">\({C_i}^+\)</span> and <span class="math inline">\({C_i}^-\)</span> to be less than 1 as individual variables; however, setting the constraint as a sum of the variables captures the intent of the constraint more explicitly.<a href="#fnref1" class="footnote-back">↩︎</a></p></li>
 </ol>
 </div>
   </div>
